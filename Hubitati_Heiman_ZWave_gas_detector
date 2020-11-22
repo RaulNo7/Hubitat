@@ -1,0 +1,189 @@
+/**
+ *  
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ *
+ *
+ * Modified from the Smartthings Generic Z-Wave Device Handler
+ *
+ */
+ 
+metadata {
+	definition (name: "Heiman Z-Wave Gas Detector", namespace: "RaulNo7", author: "RaulNo7", genericHandler: "Z-Wave") {
+        //capability "Refresh"
+        //capability "Configuration"
+        capability "SmokeDetector"
+		capability "Sensor"
+		
+		attribute "gas", "string"
+
+		fingerprint deviceId: "0x1000", mfr: "0608", inClusters: "0x5E,0x85,0x59,0x86,0x72,0x5A,0x73,0x71", deviceJoinName: "Heiman Z-Wave Gas Detector HSISA-Z"
+	}
+}
+
+def parse(String description) {
+	def results = []
+	if (description.startsWith("Err")) {
+	    results << createEvent(descriptionText:description, displayed:true)
+	} else {
+		def cmd = zwave.parse(description, commandClassVersions)
+		if (cmd) {
+			zwaveEvent(cmd, results)
+		}
+	}
+	log.debug "'$description' parsed to ${results.inspect()}"
+	return results
+}
+
+def createSmokeEvents(name, results) {
+	def text = null
+	
+	switch (name) {
+		case "gas":
+			text = "$device.displayName gas was detected!"
+			// these are displayed:false because the composite event is the one we want to see in the app
+			results << createEvent(name: "gas", value: "detected", descriptionText: text)
+			log.info text
+			break
+		case "tested":
+			text = "$device.displayName was tested"
+			results << createEvent(name: "gas", value: "tested", descriptionText: text)
+			log.info text
+			break
+		case "gasClear":
+			text = "$device.displayName gas is clear"
+			results << createEvent(name: "gas", value: "clear", descriptionText: text)
+			name = "clear"
+			log.info text
+			break
+		case "testClear":
+			text = "$device.displayName test cleared"
+			results << createEvent(name: "gas", value: "clear", descriptionText: text)
+			name = "clear"
+			log.info text
+			break
+	}
+}
+
+def zwaveEvent(hubitat.zwave.commands.notificationv3.NotificationReport cmd, results) {
+	if (cmd.notificationType == 0x12) {  // Gas Alarm
+		switch (cmd.event) {
+			case 0x00:
+			case 0xFE:
+				createSmokeEvents("gasClear", results)
+				break
+			case 0x01:
+			case 0x02:
+				createSmokeEvents("gas", results)
+				break
+			case 0x03:
+				createSmokeEvents("tested", results)
+				break
+		}
+	} else 
+        switch (cmd.v1AlarmType) {
+		case 1:
+			createSmokeEvents(cmd.v1AlarmLevel ? "gas" : "gasClear", results)
+			break
+		case 12:  // test button pressed
+			createSmokeEvents(cmd.v1AlarmLevel ? "tested" : "testClear", results)
+			break
+		case 13:  // sent every hour -- not sure what this means, just a wake up notification?
+			if (cmd.v1AlarmLevel == 255) {
+				results << createEvent(descriptionText: "$device.displayName checked in", isStateChange: false)
+			} else {
+				results << createEvent(descriptionText: "$device.displayName code 13 is $cmd.v1AlarmLevel", isStateChange: true, displayed: false)
+			}
+
+			// Clear smoke in case they pulled batteries and we missed the clear msg
+			if (device.currentValue("gas") != "clear") {
+				createSmokeEvents("gasClear", results)
+			}
+
+			break
+		default:
+			results << createEvent(displayed: true, descriptionText: "Alarm $cmd.v1AlarmType ${cmd.v1AlarmLevel == 255 ? 'activated' : cmd.v1AlarmLevel ?: 'deactivated'}".toString())
+			break
+	}
+}
+
+def zwaveEvent(hubitat.zwave.commands.notificationv3.NotificationSupportedReport  cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.deviceresetlocallyv1.DeviceResetLocallyNotification cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.versionv2.VersionReport cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.zwaveplusinfov2.ZwaveplusInfoGet cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.zwaveplusinfov2.ZwaveplusInfoReport cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificGet cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.DeviceSpecificGet cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.manufacturerspecificv2.DeviceSpecificReport cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.powerlevelv1.PowerlevelGet cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.commands.powerlevelv1.PowerlevelReport cmd, results) {
+    log.debug cmd
+}
+
+def zwaveEvent(hubitat.zwave.Command cmd, results) {
+	def event = [ displayed: false ]
+	event.linkText = device.label ?: device.name
+	event.descriptionText = "$event.linkText: $cmd"
+	results << createEvent(event)
+}
+
+
+def configure() {
+    log.debug("configure")
+    //zwave.deviceResetLocallyV1.deviceResetLocallyNotification().format()
+}
+
+def refresh() {
+    log.debug("refresh")
+    //zwave.notificationV3.notificationSupportedGet().format()
+}
+
+/**
+ *  Default event handler -  Called for all unhandled events
+ */
+def zwaveEvent(hubitat.zwave.Command cmd) {
+    if (state.debug) {
+	log.debug "Unhandled in this driver: $cmd"
+	createEvent(descriptionText: "${device.displayName}: ${cmd}")
+    }
+    else {
+	[:]
+    }
+}
